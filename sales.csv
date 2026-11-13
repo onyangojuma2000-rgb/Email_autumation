@@ -1,0 +1,13 @@
+date,transaction_id,item_name,quantity_sold,price
+2026-11-13,TXN001,Maize Flour 2kg,2,180
+2026-11-13,TXN001,Cooking Oil 1L,1,320
+2026-11-13,TXN002,Maize Flour 2kg,3,180
+2026-11-13,TXN003,White Sugar 1kg,2,170
+2026-11-13,TXN004,Bread 400g,4,70
+2026-11-13,TXN005,Cooking Oil 1L,2,320
+2026-11-13,TXN006,Maize Flour 2kg,2,180
+2026-11-13,TXN007,Tea Leaves 500g,1,260
+2026-11-13,TXN008,Bread 400g,3,70
+2026-11-13,TXN009,White Sugar 1kg,2,170
+2026-11-13,TXN010,Maize Flour 2kg,1,180
+2026-11-13,TXN011,Cooking Oil 1L,1,320
