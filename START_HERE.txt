@@ -1,0 +1,38 @@
+
+WEEKLY REPORT GENERATOR - QUICK START
+
+1. Install Python 3.11 or newer.
+
+2. Open this project folder in VS Code.
+
+3. Open Terminal and run:
+
+   py -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install -r requirements.txt
+   Copy-Item .env.example .env
+
+4. Edit .env:
+   - Gmail address
+   - Gmail App Password
+   - Report recipient
+   - Optional Anthropic API key
+
+5. Place daily CSV files in the input folder.
+
+6. Run a test:
+
+   python app.py
+
+7. Confirm the report arrives by email.
+
+8. Configure Windows Task Scheduler using
+   the instructions in README.md.
+
+IMPORTANT:
+- Never upload .env to GitHub.
+- Use a Gmail App Password, not your normal password.
+- CSV headers must match across files.
+- Source files are archived after successful email delivery.
+- Keep the computer on and connected to the internet
+  at the scheduled reporting time.

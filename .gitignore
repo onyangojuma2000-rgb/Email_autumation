@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 .env
 __pycache__/
@@ -7,6 +8,28 @@ venv/
 .venv/
 sales_report.log
 >>>>>>> a2fc808 (Add project gitignore)
+=======
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+.env
+
+logs/
+
+reports/*.csv
+
+archive/*
+!archive/.gitkeep
+
+input/*
+!input/.gitkeep
+
+.DS_Store
+Thumbs.db
+>>>>>>> 8b86516 (Weekly-report-sales-generator)
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -168,8 +191,11 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+<<<<<<< HEAD
 sales_report.log
 
+=======
+>>>>>>> 8b86516 (Weekly-report-sales-generator)
 
 # Conda environments
 conda-meta/
