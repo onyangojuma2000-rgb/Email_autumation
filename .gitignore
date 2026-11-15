@@ -1,3 +1,12 @@
+<<<<<<< HEAD
+=======
+.env
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+sales_report.log
+>>>>>>> a2fc808 (Add project gitignore)
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
