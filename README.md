@@ -269,11 +269,85 @@ The AI key is optional. Without it, the program still generates and emails a rep
 2. Save them in the `input` folder.
 3. Ensure every CSV has matching column headers.
 4. Run the program:
+# Invoice Reminder Script v1.0
+
+A Python application that reads an Excel invoice register, identifies overdue unpaid invoices, and generates polite payment reminders.
+
+It can also send reminders through Gmail SMTP and maintain a record of successfully sent invoices to prevent duplicate emails.
+
+## Features
+
+- Reads invoice records from Excel.
+- Identifies unpaid invoices past their due dates.
+- Generates personalized email drafts.
+- Saves drafts in the Outbox folder.
+- Sends emails through Gmail SMTP when enabled.
+- Tracks sent invoices using JSON.
+- Prevents repeated reminders for the same invoice number.
+- Logs errors and processing activity.
+- Supports Kenyan Shillings (KES).
+
+## Project requirements
+
+- Python 3.10 or newer
+- Gmail account
+- Gmail App Password for SMTP
+- Microsoft Excel or another compatible spreadsheet application
+
+## Installation
+
+Create and activate a virtual environment:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Create your environment file:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` with your business settings and Gmail credentials.
+
+## Excel workbook
+
+Location:
+
+`input/invoices.xlsx`
+
+Required columns:
+
+| Column | Description |
+|---|---|
+| invoice_number | Unique invoice reference |
+| client_name | Client or business name |
+| client_email | Client email address |
+| invoice_amount | Invoice amount |
+| due_date | Payment deadline |
+| paid | Yes or No |
+
+Example:
+
+| invoice_number | client_name | client_email | invoice_amount | due_date | paid |
+|---|---|---|---:|---|---|
+| INV-001 | Kamau Stores | kamau@example.com | 15000 | 2026-11-10 | No |
+| INV-002 | Wanjiku Traders | wanjiku@example.com | 8500 | 2026-11-20 | No |
+
+## Run the application
 
 ```powershell
 python app.py
 ```
 
+<<<<<<< HEAD
 The system consolidates the files, calculates totals, generates the trend comment, and emails the report.
 
 ## Automatic weekly scheduling
@@ -339,3 +413,74 @@ The final price depends on the client's CSV formats, reporting requirements, ema
 - CSV headers must match.
 - The computer must be on and online for scheduled execution.
 - The current version emails a CSV attachment, not a PDF or Excel dashboard.
+=======
+If the workbook does not exist, a sample workbook is created automatically.
+
+Open it, replace the sample data, and run the application again.
+
+## Email configuration
+
+The `.env` file contains:
+
+- GMAIL_ADDRESS
+- GMAIL_APP_PASSWORD
+- SEND_EMAILS
+
+Set:
+
+`SEND_EMAILS=false`
+
+to generate drafts without sending emails.
+
+Set:
+
+`SEND_EMAILS=true`
+
+to send reminders through Gmail.
+
+Use a Gmail App Password, not your normal Gmail password. Google 2-Step Verification is required.
+
+## Duplicate protection
+
+The application stores successfully sent invoice numbers in:
+
+`Outbox/sent_reminders.json`
+
+Invoices already recorded in this file are not emailed again.
+
+This version sends one reminder per invoice number. It does not yet support repeated reminder schedules.
+
+Keep the tracking file safe and backed up.
+
+## Output files
+
+- Outbox/: generated email drafts and sent reminder history.
+- logs/invoice_reminder.log: application activity and errors.
+
+## Safety
+
+- Paid invoices are excluded.
+- Invoices due today or in the future are excluded.
+- Email sending is disabled by default.
+- Failed email deliveries are not recorded as successfully sent.
+- Test with an email address you control before contacting clients.
+
+## Commercial opportunity
+
+Target customers:
+
+- Freelancers
+- Consultants
+- Small businesses
+- Furniture dealers
+- Contractors
+- Accounting firms
+
+Suggested one-time setup price:
+
+KES 8,000–15,000.
+
+## Version
+
+Invoice Reminder Script v1.0
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)

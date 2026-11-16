@@ -1,5 +1,6 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 .env
 __pycache__/
@@ -10,6 +11,8 @@ sales_report.log
 >>>>>>> a2fc808 (Add project gitignore)
 =======
 
+=======
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)
 .venv/
 venv/
 __pycache__/
@@ -18,19 +21,27 @@ __pycache__/
 .env
 
 logs/
+<<<<<<< HEAD
 
 reports/*.csv
 
 archive/*
 !archive/.gitkeep
+=======
+Outbox/*
+!Outbox/.gitkeep
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)
 
 input/*
 !input/.gitkeep
 
 .DS_Store
 Thumbs.db
+<<<<<<< HEAD
 >>>>>>> 8b86516 (Weekly-report-sales-generator)
 
+=======
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -192,10 +203,13 @@ ENV/
 env.bak/
 venv.bak/
 <<<<<<< HEAD
+<<<<<<< HEAD
 sales_report.log
 
 =======
 >>>>>>> 8b86516 (Weekly-report-sales-generator)
+=======
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)
 
 # Conda environments
 conda-meta/

@@ -4,6 +4,10 @@ import logging
 import os
 import re
 import shutil
+import json
+import logging
+import os
+import re
 import smtplib
 import ssl
 import sys
@@ -19,6 +23,19 @@ from dotenv import load_dotenv
 # ----------------------------------
 # 1. PROJECT CONFIGURATION
 # ----------------------------------
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from email.message import EmailMessage
+from pathlib import Path
+
+from dotenv import load_dotenv
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+
+
+# ==================================================
+# 1. PROJECT CONFIGURATION
+# ==================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -486,6 +503,449 @@ def send_email(subject, html_body, attachment_path):
             subtype="csv",
             filename=attachment_path.name
         )
+BUSINESS_NAME = os.getenv(
+    "BUSINESS_NAME", "Accounts Department"
+)
+
+CURRENCY = os.getenv("CURRENCY", "KES")
+
+INPUT_FILE = BASE_DIR / os.getenv(
+    "INPUT_FILE", "input/invoices.xlsx"
+)
+
+OUTBOX_FOLDER = BASE_DIR / os.getenv(
+    "OUTBOX_FOLDER", "Outbox"
+)
+
+LOG_FOLDER = BASE_DIR / os.getenv(
+    "LOG_FOLDER", "logs"
+)
+
+GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "").strip()
+
+GMAIL_APP_PASSWORD = os.getenv(
+    "GMAIL_APP_PASSWORD", ""
+).replace(" ", "").strip()
+
+SEND_EMAILS = (
+    os.getenv("SEND_EMAILS", "false").strip().lower()
+    == "true"
+)
+
+SENT_RECORD_FILE = OUTBOX_FOLDER / "sent_reminders.json"
+
+
+# ==================================================
+# 2. CREATE REQUIRED DIRECTORIES
+# ==================================================
+
+INPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+OUTBOX_FOLDER.mkdir(parents=True, exist_ok=True)
+LOG_FOLDER.mkdir(parents=True, exist_ok=True)
+
+
+# ==================================================
+# 3. LOGGING
+# ==================================================
+
+LOG_FILE = LOG_FOLDER / "invoice_reminder.log"
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    encoding="utf-8"
+)
+
+
+# ==================================================
+# 4. CREATE SAMPLE EXCEL WORKBOOK
+# ==================================================
+
+def create_sample_workbook():
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Invoices"
+
+    headers = [
+        "invoice_number",
+        "client_name",
+        "client_email",
+        "invoice_amount",
+        "due_date",
+        "paid"
+    ]
+
+    sheet.append(headers)
+
+    today = date.today()
+
+    sample_invoices = [
+        [
+            "INV-001",
+            "Kamau Stores",
+            "your_test_email@gmail.com",
+            15000,
+            today - timedelta(days=6),
+            "No"
+        ],
+        [
+            "INV-002",
+            "Wanjiku Traders",
+            "your_test_email@gmail.com",
+            8500,
+            today + timedelta(days=5),
+            "No"
+        ],
+        [
+            "INV-003",
+            "Otieno Furniture",
+            "your_test_email@gmail.com",
+            22000,
+            today - timedelta(days=10),
+            "Yes"
+        ],
+        [
+            "INV-004",
+            "Grace Enterprises",
+            "your_test_email@gmail.com",
+            12000,
+            today - timedelta(days=3),
+            "No"
+        ]
+    ]
+
+    for invoice in sample_invoices:
+        sheet.append(invoice)
+
+    # Style the heading row
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="1F4E78"
+        )
+
+    # Set column widths
+    widths = {
+        "A": 18,
+        "B": 25,
+        "C": 35,
+        "D": 20,
+        "E": 18,
+        "F": 12
+    }
+
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+
+    # Format dates and amounts
+    for row in range(2, sheet.max_row + 1):
+        sheet.cell(row=row, column=4).number_format = '#,##0.00'
+        sheet.cell(row=row, column=5).number_format = 'yyyy-mm-dd'
+
+    workbook.save(INPUT_FILE)
+    workbook.close()
+
+    print(f"Sample workbook created: {INPUT_FILE}")
+    print("Open it and replace the sample client details.")
+    print("Use a real client email only with permission.")
+
+
+# ==================================================
+# 5. NORMALIZE EXCEL HEADERS
+# ==================================================
+
+def normalize_header(value):
+
+    if value is None:
+        return ""
+
+    value = str(value).strip().lower()
+
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+
+    return value.strip("_")
+
+
+# ==================================================
+# 6. PARSE INVOICE DATES
+# ==================================================
+
+def parse_due_date(value):
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    if value is None or str(value).strip() == "":
+        raise ValueError("Invoice due date is missing")
+
+    date_text = str(value).strip()
+
+    formats = [
+        "%Y-%m-%d",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%Y/%m/%d"
+    ]
+
+    for date_format in formats:
+
+        try:
+            return datetime.strptime(
+                date_text, date_format
+            ).date()
+
+        except ValueError:
+            continue
+
+    raise ValueError(
+        f"Unsupported date format: {date_text}"
+    )
+
+
+# ==================================================
+# 7. FORMAT INVOICE AMOUNTS
+# ==================================================
+
+def format_amount(value):
+
+    if value is None or str(value).strip() == "":
+        raise ValueError("Invoice amount is missing")
+
+    amount_text = str(value).strip()
+
+    amount_text = (
+        amount_text
+        .replace(",", "")
+        .replace("KES", "")
+        .replace("KSh", "")
+        .replace(" ", "")
+    )
+
+    try:
+        amount = Decimal(amount_text)
+
+    except InvalidOperation:
+        raise ValueError(
+            f"Invalid invoice amount: {value}"
+        )
+
+    if not amount.is_finite() or amount < 0:
+        raise ValueError(
+            f"Invalid invoice amount: {value}"
+        )
+
+    return f"{CURRENCY} {amount:,.2f}"
+
+
+# ==================================================
+# 8. CHECK PAYMENT STATUS
+# ==================================================
+
+def is_unpaid(value):
+
+    status = str(value).strip().lower()
+
+    if status in ["no", "n", "false", "0", "unpaid"]:
+        return True
+
+    if status in ["yes", "y", "true", "1", "paid"]:
+        return False
+
+    raise ValueError(
+        f"Invalid payment status: {value}"
+    )
+
+
+# ==================================================
+# 9. VALIDATE EMAIL ADDRESS
+# ==================================================
+
+def validate_email(email):
+
+    email = str(email).strip()
+
+    pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+    if not re.match(pattern, email):
+        raise ValueError(
+            f"Invalid client email address: {email}"
+        )
+
+    return email
+
+
+# ==================================================
+# 10. CREATE EMAIL SUBJECT AND BODY
+# ==================================================
+
+def create_email_content(
+    invoice_number,
+    client_name,
+    invoice_amount,
+    due_date
+):
+
+    subject = (
+        f"Friendly Reminder: Outstanding Invoice "
+        f"{invoice_number}"
+    )
+
+    body = f"""
+Dear {client_name},
+
+I hope you are doing well.
+
+This is a friendly reminder that invoice
+{invoice_number}, amounting to {invoice_amount},
+was due on {due_date.strftime('%d %B %Y')}.
+
+Our records indicate that the payment is
+still outstanding.
+
+Kindly let us know when we can expect payment.
+
+If you have already made the payment, please
+disregard this reminder and accept our apologies.
+
+Thank you for your continued business.
+
+Best regards,
+
+{BUSINESS_NAME}
+""".strip()
+
+    return subject, body
+
+
+# ==================================================
+# 11. CREATE TEXT EMAIL DRAFT
+# ==================================================
+
+def create_email_draft(
+    client_email,
+    subject,
+    body
+):
+
+    return (
+        f"To: {client_email}\n"
+        f"Subject: {subject}\n\n"
+        f"{body}\n"
+    )
+
+
+# ==================================================
+# 12. GENERATE SAFE FILE NAME
+# ==================================================
+
+def safe_filename(value):
+
+    filename = re.sub(
+        r"[^a-zA-Z0-9_-]+",
+        "_",
+        str(value).strip()
+    )
+
+    return filename.strip("_") or "invoice"
+
+
+# ==================================================
+# 13. LOAD SENT INVOICE RECORDS
+# ==================================================
+
+def load_sent_records():
+
+    if not SENT_RECORD_FILE.exists():
+        return {}
+
+    try:
+
+        with SENT_RECORD_FILE.open(
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            records = json.load(file)
+
+        if not isinstance(records, dict):
+            raise ValueError(
+                "Sent reminder record must be a JSON object"
+            )
+
+        return records
+
+    except (json.JSONDecodeError, OSError, ValueError) as error:
+
+        raise RuntimeError(
+            f"Cannot read sent reminder history: {error}. "
+            "Do not delete or overwrite this file until "
+            "its contents have been checked."
+        ) from error
+
+
+# ==================================================
+# 14. SAVE SENT INVOICE RECORDS
+# ==================================================
+
+def save_sent_records(records):
+
+    temporary_file = SENT_RECORD_FILE.with_suffix(".tmp")
+
+    with temporary_file.open(
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            records,
+            file,
+            indent=4
+        )
+
+    temporary_file.replace(SENT_RECORD_FILE)
+
+
+# ==================================================
+# 15. SEND EMAIL USING GMAIL
+# ==================================================
+
+def send_reminder_email(
+    client_email,
+    client_name,
+    invoice_number,
+    invoice_amount,
+    due_date
+):
+
+    if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
+        raise ValueError(
+            "Gmail settings are incomplete. "
+            "Check GMAIL_ADDRESS and GMAIL_APP_PASSWORD "
+            "in .env"
+        )
+
+    client_email = validate_email(client_email)
+
+    subject, body = create_email_content(
+        invoice_number,
+        client_name,
+        invoice_amount,
+        due_date
+    )
+
+    message = EmailMessage()
+
+    message["From"] = GMAIL_ADDRESS
+    message["To"] = client_email
+    message["Subject"] = subject
+
+    message.set_content(body)
 
     context = ssl.create_default_context()
 
@@ -494,6 +954,7 @@ def send_email(subject, html_body, attachment_path):
         465,
         context=context,
         timeout=30
+<<<<<<< HEAD
     ) as smtp:
 
         smtp.login(
@@ -595,10 +1056,361 @@ def run_report():
         f"SUCCESS: Report emailed. File: {report_path}"
     )
 
+=======
+    ) as server:
+
+        server.login(
+            GMAIL_ADDRESS,
+            GMAIL_APP_PASSWORD
+        )
+
+        server.send_message(message)
+
+    logging.info(
+        "Email successfully sent: %s to %s",
+        invoice_number,
+        client_email
+    )
+
+
+# ==================================================
+# 16. PROCESS EXCEL INVOICES
+# ==================================================
+
+def process_invoices():
+
+    if not INPUT_FILE.exists():
+
+        create_sample_workbook()
+
+        print("\nUpdate the sample workbook and run:")
+        print("python app.py")
+
+        return
+
+    if SEND_EMAILS and (
+        not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD
+    ):
+
+        raise ValueError(
+            "Email settings are incomplete. "
+            "Check GMAIL_ADDRESS and GMAIL_APP_PASSWORD "
+            "in .env"
+        )
+
+    sent_records = load_sent_records()
+
+    workbook = load_workbook(
+        INPUT_FILE,
+        read_only=True,
+        data_only=True
+    )
+
+    try:
+
+        sheet = workbook.active
+
+        rows = sheet.iter_rows(values_only=True)
+
+        headers = [
+            normalize_header(value)
+            for value in next(rows, [])
+        ]
+
+        required_columns = [
+            "invoice_number",
+            "client_name",
+            "client_email",
+            "invoice_amount",
+            "due_date",
+            "paid"
+        ]
+
+        missing_columns = [
+            column
+            for column in required_columns
+            if column not in headers
+        ]
+
+        if missing_columns:
+
+            raise ValueError(
+                "Missing Excel columns: "
+                + ", ".join(missing_columns)
+            )
+
+        positions = {
+            column: headers.index(column)
+            for column in required_columns
+        }
+
+        today = date.today()
+
+        total_invoices = 0
+        overdue_count = 0
+        sent_count = 0
+        already_sent_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        seen_invoice_numbers = set()
+
+        print("\nINVOICE REMINDER REPORT")
+        print("=" * 50)
+        print(f"Report date: {today}")
+        print(
+            f"Email sending: "
+            f"{'ENABLED' if SEND_EMAILS else 'DISABLED'}"
+        )
+        print("=" * 50)
+
+        for row_number, row in enumerate(rows, start=2):
+
+            if not row or all(
+                value is None or str(value).strip() == ""
+                for value in row
+            ):
+                continue
+
+            total_invoices += 1
+
+            try:
+
+                invoice_number = row[
+                    positions["invoice_number"]
+                ]
+
+                client_name = row[
+                    positions["client_name"]
+                ]
+
+                client_email = row[
+                    positions["client_email"]
+                ]
+
+                invoice_amount = row[
+                    positions["invoice_amount"]
+                ]
+
+                due_date_value = row[
+                    positions["due_date"]
+                ]
+
+                paid_status = row[
+                    positions["paid"]
+                ]
+
+                if not invoice_number:
+                    raise ValueError(
+                        "Invoice number is missing"
+                    )
+
+                invoice_number = str(
+                    invoice_number
+                ).strip()
+
+                if invoice_number in seen_invoice_numbers:
+                    raise ValueError(
+                        f"Duplicate invoice number: {invoice_number}"
+                    )
+
+                seen_invoice_numbers.add(invoice_number)
+
+                if not client_name:
+                    raise ValueError(
+                        "Client name is missing"
+                    )
+
+                client_name = str(client_name).strip()
+
+                due_date = parse_due_date(
+                    due_date_value
+                )
+
+                unpaid = is_unpaid(paid_status)
+
+                if not unpaid:
+
+                    print(
+                        f"Skipped {invoice_number}: already paid"
+                    )
+
+                    continue
+
+                if due_date >= today:
+
+                    print(
+                        f"Skipped {invoice_number}: not overdue"
+                    )
+
+                    continue
+
+                formatted_amount = format_amount(
+                    invoice_amount
+                )
+
+                overdue_count += 1
+
+                # Check duplicate email history
+                if invoice_number in sent_records:
+
+                    already_sent_count += 1
+
+                    print(
+                        f"Already sent: {invoice_number}"
+                    )
+
+                    continue
+
+                # Create email content
+                subject, body = create_email_content(
+                    invoice_number,
+                    client_name,
+                    formatted_amount,
+                    due_date
+                )
+
+                # Save a text draft
+                filename = (
+                    f"{safe_filename(invoice_number)}_"
+                    f"{safe_filename(client_name)}.txt"
+                )
+
+                output_file = OUTBOX_FOLDER / filename
+
+                email_draft = create_email_draft(
+                    client_email or "[Add client email]",
+                    subject,
+                    body
+                )
+
+                output_file.write_text(
+                    email_draft,
+                    encoding="utf-8"
+                )
+
+                print(
+                    f"Draft created: {invoice_number}"
+                )
+
+                # Send email only if enabled
+                if SEND_EMAILS:
+
+                    try:
+
+                        send_reminder_email(
+                            client_email,
+                            client_name,
+                            invoice_number,
+                            formatted_amount,
+                            due_date
+                        )
+
+                        # Record successful delivery only
+                        sent_records[invoice_number] = {
+                            "client_name": client_name,
+                            "client_email": client_email,
+                            "invoice_amount": formatted_amount,
+                            "due_date": due_date.isoformat(),
+                            "sent_at": datetime.now().isoformat(
+                                timespec="seconds"
+                            )
+                        }
+
+                        save_sent_records(sent_records)
+
+                        sent_count += 1
+
+                        print(
+                            f"Email sent: {invoice_number}"
+                        )
+
+                    except Exception as email_error:
+
+                        failed_count += 1
+
+                        logging.exception(
+                            "Email failed for invoice %s",
+                            invoice_number
+                        )
+
+                        print(
+                            f"Email failed for {invoice_number}: "
+                            f"{email_error}"
+                        )
+
+                else:
+
+                    print(
+                        f"Email sending disabled: {invoice_number}"
+                    )
+
+            except (ValueError, TypeError, IndexError) as error:
+
+                skipped_count += 1
+
+                logging.warning(
+                    "Row %s skipped: %s",
+                    row_number,
+                    error
+                )
+
+                print(
+                    f"Skipped row {row_number}: {error}"
+                )
+
+            except OSError as error:
+
+                failed_count += 1
+
+                logging.exception(
+                    "File operation failed on row %s",
+                    row_number
+                )
+
+                print(
+                    f"File error on row {row_number}: {error}"
+                )
+
+        print("\n" + "=" * 50)
+        print("PROCESSING COMPLETED")
+        print("=" * 50)
+
+        print(f"Total invoices checked: {total_invoices}")
+        print(f"Overdue unpaid invoices: {overdue_count}")
+        print(f"New email drafts created: {overdue_count - already_sent_count - failed_count if not SEND_EMAILS else overdue_count - already_sent_count}")
+        print(f"Emails successfully sent: {sent_count}")
+        print(f"Already sent previously: {already_sent_count}")
+        print(f"Rows skipped: {skipped_count}")
+        print(f"Email/file failures: {failed_count}")
+
+        print(f"\nDrafts saved in: {OUTBOX_FOLDER}")
+        print(f"Log file: {LOG_FILE}")
+
+        logging.info(
+            "Run completed. Checked=%s, Overdue=%s, Sent=%s, "
+            "Already sent=%s, Skipped=%s, Failed=%s",
+            total_invoices,
+            overdue_count,
+            sent_count,
+            already_sent_count,
+            skipped_count,
+            failed_count
+        )
+
+    finally:
+        workbook.close()
+
+
+# ==================================================
+# 17. MAIN PROGRAM
+# ==================================================
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)
 
 if __name__ == "__main__":
 
     try:
+<<<<<<< HEAD
         run_report()
 
     except Exception as exc:
@@ -612,5 +1424,17 @@ if __name__ == "__main__":
             f"ERROR: Report not completed: {exc}",
             file=sys.stderr
         )
+=======
+
+        process_invoices()
+
+    except Exception as error:
+
+        logging.exception(
+            "Invoice reminder application failed"
+        )
+
+        print(f"\nERROR: {error}")
+>>>>>>> 2c47a18 (invoice-automatic-reminder-system)
 
         sys.exit(1)
